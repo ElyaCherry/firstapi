@@ -1,27 +1,7 @@
+from flask_restful import reqparse, abort, Resource
 import sqlite3
-from sqlite3 import Error
 
-con = sqlite3.connect('mydatabase.db')
-
-cursorObj = con.cursor()
-
-
-def sql_connection():
-    try:
-        con = sqlite3.connect('mydatabase.db')
-        return con
-    except Error:
-        print(Error)
-
-
-def sql_table(con):
-    cursorObj = con.cursor()
-    cursorObj.execute("CREATE TABLE employees(id integer PRIMARY KEY, name text, salary real, department text, position text, hireDate text)")
-    con.commit()
-
-
-con = sql_connection()
-sql_table(con)
+parser = reqparse.RequestParser()
 
 
 class User(object):
@@ -58,3 +38,22 @@ class User(object):
 
         user = User(*row) if row else None
         return user
+
+
+class UserRegister(Resource):
+    @staticmethod
+    def post():
+        connection = sqlite3.connect('data.db')
+        cursor = connection.cursor()
+        parser.add_argument('username', help="Username can't be blank")
+        parser.add_argument('password', help="Password can't be blank")
+        args = parser.parse_args()
+        if list(cursor.execute("SELECT * FROM users WHERE username = '%s'" % args['username'])):
+            abort(404, message="Username {} already exists.".format(args['username']))
+        else:
+            query = 'INSERT INTO users(id, username, password) VALUES (NULL, ?, ?)'
+            user = (args['username'], args['password'])
+            cursor.execute(query, user)
+            connection.commit()
+            connection.close()
+            return "Successfully added user {}".format(args['username']), 201

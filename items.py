@@ -1,10 +1,31 @@
 from flask_jwt import JWT, jwt_required, current_identity
 from flask_restful import reqparse, Resource
-
-
+import sqlite3
 
 # Query parser
 parser = reqparse.RequestParser()
+parser.add_argument('price', required=True)
+parser.add_argument('items', type=dict, action="append", required=True)
+
+
+# requested item doesn't exist error
+def abort_if_item_doesnt_exist(name):
+    connection = sqlite3.connect('data.db', check_same_thread=False)
+    cursor = connection.cursor()
+    if not list(cursor.execute("SELECT * FROM items WHERE name = '%s'" % name)):
+        abort(404, message="There's no such item in the shop ({})".format(name))
+    connection.commit()
+    connection.close()
+
+
+# item already has been created
+def abort_if_item_already_exists(name):
+    connection = sqlite3.connect('data.db', check_same_thread=False)
+    cursor = connection.cursor()
+    if list(cursor.execute("SELECT * FROM items WHERE name = '%s'" % name)):
+        abort(404, message="You can't add this item, because it already exists ({})".format(name))
+    connection.commit()
+    connection.close()
 
 
 # Class of items which allows to view, create, edit and delete one item
@@ -13,49 +34,75 @@ class Item(Resource):
     # Get item by name
     @jwt_required()
     def get(self, name):
-        item = list(filter(lambda x: x['name'] == name, items))
-        if item:
-            return {'searched_item': item[0]}
-        return {'message': 'item not found'}
+        connection = sqlite3.connect('data.db', check_same_thread=False)
+        cursor = connection.cursor()
+
+        abort_if_item_doesnt_exist(name)
+        item = list(cursor.execute("SELECT * FROM items WHERE name = '%s'" % name))
+
+        connection.commit()
+        connection.close()
+
+        return item, 201
 
     # POST /items/<name>
     # Create new item by name
     @jwt_required()
     def post(self, name):
-        parser.add_argument('price', required=True)
-        item = list(filter(lambda x: x['name'] == name, items))
-        if item:
-            return {'message': 'item already exists'}
-        price = parser.parse_args()['price']
-        if price.isdigit():
-            items.append({'name': name, 'price': int(price)})
-            return {'items': items}
-        return {'message': 'price is not an integer'}
+        connection = sqlite3.connect('data.db', check_same_thread=False)
+        cursor = connection.cursor()
+
+        abort_if_item_already_exists(name)
+        args = parser.parse_args()
+        query = "INSERT INTO items(id, name, price) VALUES (NULL, ?, ?)"
+        item = (name, args['price'])
+        cursor.execute(query, item)
+
+        connection.commit()
+        connection.close()
+
+        return "Added items {}".format(item), 201
 
     # PUT /items/<name>
     # Edit price of an item by name
     # If no item found by name, create item by name
     @jwt_required()
     def put(self, name):
-        parser.add_argument('price', required=True)
-        item = list(filter(lambda x: x['name'] == name, items))
-        price = parser.parse_args()['price']
-        if item:
-            if price.isdigit():
-                item[0]['price'] = int(price)
-                return {'items': items}
-            return {'message': 'price is not an integer'}
-        Item.post(self, name)
+        args = parser.parse_args()
+        item = (name, args['price'])
+
+        connection = sqlite3.connect('data.db', check_same_thread=False)
+        cursor = connection.cursor()
+
+        if not list(cursor.execute("SELECT * FROM items WHERE name = '%s'" % name)):
+            query = "INSERT INTO items(id, name, price) VALUES (NULL, ?, ?)"
+            cursor.execute(query, item)
+
+            connection.commit()
+            connection.close()
+        else:
+            query = "UPDATE items SET price = {0} WHERE name = '{1}'".format(args['price'], name)
+            cursor.execute(query)
+
+            connection.commit()
+            connection.close()
+        return item, 201
 
     # DELETE /items/<name>
     # Delete item by name
     @jwt_required()
     def delete(self, name):
-        item = list(filter(lambda x: x['name'] == name, items))
-        if item:
-            items.remove(item[0])
-            return {'items': items}
-        return {'message': 'item not found'}
+        connection = sqlite3.connect('data.db', check_same_thread=False)
+        cursor = connection.cursor()
+
+        abort_if_item_doesnt_exist(name)
+        query = "DELETE from items WHERE name = '%s'" % name
+        cursor.execute(query)
+
+        connection.commit()
+        connection.close()
+
+        return '', 204
 
 
 class ItemList(Resource):
@@ -63,23 +110,32 @@ class ItemList(Resource):
     # Get a list of all items
     @jwt_required()
     def get(self):
-        return {'items': items}
+        connection = sqlite3.connect('data.db', check_same_thread=False)
+        cursor = connection.cursor()
+
+        item = list(cursor.execute("SELECT * FROM items"))
+
+        connection.commit()
+        connection.close()
+
+        return item, 201
 
     # POST /items
     # Create several items
     # Takes dict with key 'items' and value list of item dicts
     @jwt_required()
     def post(self):
-        parser.add_argument('itemlist', type=dict, action='append', required=True)
-        itemlist = parser.parse_args()['itemlist']
-        messages = []
-        for item in itemlist:
-            if list(filter(lambda x: x['name'] == item['name'], items)):
-                messages.append({'name': item['name'], 'message': 'failed to create an item: item already exists'})
-            else:
-                if isinstance(item['price'], int):
-                    items.append({'name': item['name'], 'price': item['price']})
-                    messages.append({'name': item['name'], 'message': 'item successfully created'})
-                messages.append({'name': item['name'], 'message': 'failed to create an item: price is not an integer'})
-        return {'messages': messages, 'items': items}
+        connection = sqlite3.connect('data.db', check_same_thread=False)
+        cursor = connection.cursor()
+
+        args = parser.parse_args()
+        for i in range(len(args['items'])):
+            abort_if_item_already_exists(args['items'][i]['name'])
+            query = "INSERT INTO items(id, name, price) VALUES (NULL, ?, ?)"
+            item = (args['items'][i]['name'], args['items'][i]['price'])
+            cursor.execute(query, item)
+
+        connection.commit()
+        connection.close()
+        return "Successfully added items {}".format(args['items']), 201
 
