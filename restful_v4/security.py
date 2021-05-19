@@ -1,4 +1,4 @@
-from models.users import UserModel
+from restful_v4.models.users import UserModel
 
 
 # Authorization methods
