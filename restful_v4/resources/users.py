@@ -17,7 +17,7 @@ class UserRegisterResource(Resource):
             abort(409, message="User Already Exists")
         new_user = UserModel(**user)
         new_user.add_user()
-        return {'message': f"added {user.username}"}, 201
+        return {'message': f"added {new_user.username}"}, 201
 
     @jwt_required()
     def delete(self):
