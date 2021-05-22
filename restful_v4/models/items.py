@@ -1,4 +1,4 @@
-from restful_v4.db import db
+from db import db
 
 
 class ItemModel(db.Model):

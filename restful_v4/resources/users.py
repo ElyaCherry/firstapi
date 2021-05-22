@@ -1,6 +1,6 @@
 from flask_restful import Resource, reqparse
 
-from restful_v4.models.users import UserModel
+from models.users import UserModel
 
 
 class UserRegisterResource(Resource):
